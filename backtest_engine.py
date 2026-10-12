@@ -143,10 +143,27 @@ class BacktestEngine:
             r = df.iloc[0]
             return {"open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"]}
 
+        # Helper to calculate rolling 14-day Average True Range (ATR) percentage
+        def get_atr_pct(sym: str, dt_str: str, period: int = 14) -> float:
+            df = price_data.get(sym)
+            if df is None:
+                return 0.035
+            sub = df[df["date"] <= dt_str]
+            if len(sub) < 5:
+                return 0.035
+            sub_tail = sub.tail(period + 1)
+            highs = sub_tail["high"].values
+            lows = sub_tail["low"].values
+            closes = sub_tail["close"].values
+            tr_list = [max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1])) for i in range(1, len(sub_tail))]
+            atr = float(np.mean(tr_list)) if tr_list else float(highs[-1] - lows[-1])
+            curr_c = float(closes[-1])
+            return float(atr / curr_c) if curr_c > 0 else 0.035
+
         # Helper to execute order
         def record_trade(dt_str: str, sym: str, action: str, shares: int, price: float, reason: str):
             nonlocal cash
-            is_buy = action.startswith("BUY") or action in ["TREND_ENTRY", "RE_ENTRY", "BUY_PULLBACK"]
+            is_buy = action.startswith("BUY") or action in ["TREND_ENTRY", "RE_ENTRY", "BUY_PULLBACK", "WALK_FORWARD_ENTRY"]
             slippage_mult = (1.0 + self.slippage_pct / 100.0) if is_buy else (1.0 - self.slippage_pct / 100.0)
             exec_price = round(price * slippage_mult, 2)
             notional = round(shares * exec_price, 2)
@@ -176,7 +193,7 @@ class BacktestEngine:
                         "high_water_mark": exec_price,
                         "profit_trimmed": False
                     }
-            elif action.startswith("SELL") or action in ["STOP_LOSS", "TAKE_PROFIT", "REBALANCE_TRIM"]:
+            elif action.startswith("SELL") or action in ["STOP_LOSS", "TAKE_PROFIT", "REBALANCE_TRIM", "WALK_FORWARD_EXIT"]:
                 if sym not in positions or positions[sym]["shares"] <= 0:
                     return
                 shares = min(shares, positions[sym]["shares"])
@@ -261,7 +278,10 @@ class BacktestEngine:
                     pos["high_water_mark"] = curr_high
 
                 hwm = pos["high_water_mark"]
-                trailing_stop_level = hwm * (1.0 - trailing_stop_pct)
+                # Adaptive Volatility Trailing Stop using 4.0x 14-day ATR (bounded 10% to 25%)
+                atr_pct = get_atr_pct(sym, dt_str, period=14)
+                dynamic_stop_pct = max(0.10, min(0.25, 4.0 * atr_pct))
+                trailing_stop_level = hwm * (1.0 - dynamic_stop_pct)
 
                 # Check Stop Loss breach
                 if curr_low <= trailing_stop_level:
@@ -271,7 +291,7 @@ class BacktestEngine:
                         action="STOP_LOSS",
                         shares=pos["shares"],
                         price=round(trailing_stop_level, 2),
-                        reason=f"Trailing Stop hit (-{trailing_stop_pct*100:.1f}% from peak ${hwm:.2f})"
+                        reason=f"Adaptive ATR Stop hit (-{dynamic_stop_pct*100:.1f}%, 4.0x ATR14 from peak ${hwm:.2f})"
                     )
                     continue
 
@@ -364,10 +384,82 @@ class BacktestEngine:
                                 )
                                 last_buy_day[cand] = day_idx
                                 break
+            # 4. Institutional Quarterly Walk-Forward Re-screening & Dynamic Sector Rotation
             if not is_single_asset and days_since_rebalance >= rebalance_days:
                 days_since_rebalance = 0
                 port_val = cash + sum(positions[s]["shares"] * get_price(s, dt_str)["close"] for s in positions)
-                for sym in selected_assets:
+
+                # A. Evaluate health of current holdings (Walk-Forward decay check)
+                lagging_symbols = []
+                for s in list(positions.keys()):
+                    if s not in price_data:
+                        continue
+                    df_s = price_data[s][price_data[s]["date"] <= dt_str]
+                    if len(df_s) >= 40:
+                        curr_close = df_s["close"].iloc[-1]
+                        sma50 = df_s["close"].tail(50).mean() if len(df_s) >= 50 else df_s["close"].mean()
+                        ret_quarter = (curr_close / df_s["close"].iloc[-min(len(df_s), 40)] - 1.0) * 100
+                        # Flag severe breakdown (below 50d SMA and > 10% decline)
+                        if curr_close < (sma50 * 0.94) and ret_quarter < -10.0:
+                            lagging_symbols.append((s, ret_quarter))
+
+                # B. Rotate out of decaying laggards
+                for lag_sym, ret_q in lagging_symbols:
+                    if lag_sym in positions:
+                        shs = positions[lag_sym]["shares"]
+                        bar = get_price(lag_sym, dt_str)
+                        record_trade(
+                            dt_str=dt_str,
+                            sym=lag_sym,
+                            action="WALK_FORWARD_EXIT",
+                            shares=shs,
+                            price=bar["close"],
+                            reason=f"Quarterly Walk-Forward Rotation: Decaying Momentum (-{abs(ret_q):.1f}% quarter, broke 50-day SMA)"
+                        )
+                        if lag_sym in selected_assets:
+                            selected_assets.remove(lag_sym)
+
+                # C. Screen for emerging replacements to maintain breadth
+                port_val = cash + sum(positions[s]["shares"] * get_price(s, dt_str)["close"] for s in positions)
+                needed = top_n - len(positions)
+                if needed > 0 and cash >= (port_val * 0.04):
+                    broader_beaters = SP500NasdaqScreener.screen_outperformers(horizon_years=2, min_alpha=0.0)
+                    for cand in broader_beaters:
+                        cand_sym = cand["symbol"]
+                        if cand_sym in positions or cand_sym in selected_assets:
+                            continue
+                        if cand_sym not in price_data:
+                            price_data[cand_sym] = HistoricalDataFeed.get_price_history(cand_sym, start_dt, end_dt)
+                        df_c = price_data[cand_sym][price_data[cand_sym]["date"] <= dt_str]
+                        if len(df_c) >= 20:
+                            sma20 = df_c["close"].tail(20).mean()
+                            bar_c = get_price(cand_sym, dt_str)
+                            if bar_c["close"] > sma20:
+                                selected_assets.append(cand_sym)
+                                alloc_dollars = min(cash, port_val / top_n)
+                                shs_new = int(alloc_dollars / bar_c["close"])
+                                if shs_new > 0:
+                                    record_trade(
+                                        dt_str=dt_str,
+                                        sym=cand_sym,
+                                        action="WALK_FORWARD_ENTRY",
+                                        shares=shs_new,
+                                        price=bar_c["close"],
+                                        reason=f"Quarterly Walk-Forward Rotation: Added Emerging Leader ({cand['name'][:18]}, 2Y CAGR: {cand['cagr']}%)"
+                                    )
+                                    last_buy_day[cand_sym] = day_idx
+                                    needed -= 1
+                                    if needed <= 0 or cash < (port_val * 0.04):
+                                        break
+
+                # D. Re-optimize weights on active holdings and rebalance
+                try:
+                    opt = PortfolioOptimizer.optimize_max_sharpe(selected_assets)
+                    weights = opt["weights"]
+                except Exception:
+                    weights = {sym: 1.0 / len(selected_assets) for sym in selected_assets}
+
+                for sym in list(positions.keys()):
                     target_w = weights.get(sym, 1.0 / len(selected_assets))
                     curr_pos_val = (positions[sym]["shares"] * get_price(sym, dt_str)["close"]) if sym in positions else 0.0
                     curr_w = curr_pos_val / port_val
@@ -382,7 +474,7 @@ class BacktestEngine:
                                 action="REBALANCE_TRIM",
                                 shares=sell_shs,
                                 price=get_price(sym, dt_str)["close"],
-                                reason=f"Periodic Rebalance Trim (Weight drifted {drift*100:+.1f}% vs target {target_w*100:.1f}%)"
+                                reason=f"Quarterly Rebalance Trim (Weight drifted {drift*100:+.1f}% vs target {target_w*100:.1f}%)"
                             )
 
             # Record Daily Equity Snapshot

@@ -1,33 +1,34 @@
 # Multi-Agent Quantitative Stock Trading Strategy & Backtesting Platform
 
 A high-performance algorithmic and multi-agent equity trading system equipped with:
-1. **Full-Market Alpha Screening**: Comprehensive screening across the entire **S&P 500** and **NASDAQ 100** to extract companies that beat their corresponding index averages, replacing legacy watchlists.
-2. **Historical Backtesting & Operations Tracker**: Ability to travel back in time (e.g. 1 year ago, 2 years ago, or custom date ranges), execute the multi-agent trading strategy, review a complete chronological history of operations (buys, sells, trims, trailing stop-losses), and benchmark returns against **VTI** (Total US Stock Market), **QQQ** (NASDAQ 100), and **SPY** (S&P 500).
-3. **Multi-Agent Investment Committee**: 4-agent consensus pipeline (Macroeconomic Analyst, Alpha Screener, News Sentiment Specialist, and Chief Investment Strategist) plus Institutional Risk / Reverse-DCF Committee.
-4. **Institutional Risk Engine**: Volatility position sizing via ATR, 15% trailing stop-losses, +30% take-profit tranche harvesting, and dynamic portfolio rebalancing.
+1. **Full-Market Alpha Screening**: Comprehensive screening across the entire **S&P 500** and **NASDAQ 100** (evaluating 2-year, 5-year, 10-year, and 20-year horizons) with institutional cross-sector breadth (max 3 stocks per sector across 13 sectors).
+2. **Historical Backtesting & Operations Tracker**: Ability to travel back in time (e.g. 1 year ago, 2 years ago, or custom date ranges), execute the multi-agent trading strategy, review a complete chronological history of operations (buys, sells, trims, trailing stop-losses, and walk-forward rotations), and benchmark returns against **VTI** (Total US Stock Market), **QQQ** (NASDAQ 100), and **SPY** (S&P 500).
+3. **Institutional Walk-Forward Re-screening**: Eliminates selection lookback bias by dynamically re-evaluating relative momentum every quarter (60 trading days), exiting decaying laggards, and rotating into fresh emerging leaders.
+4. **ATR-Based Adaptive Trailing Stops**: Volatility-adaptive risk management using $4.0 \times \text{ATR}_{14}$ (bounded between 10% and 25%), protecting gains tightly on low-volatility compounders while preventing whipsaws on high-beta growth leaders.
+5. **Multi-Agent Investment Committee**: 4-agent consensus pipeline (Macroeconomic Analyst, Alpha Screener, News Sentiment Specialist, and Chief Investment Strategist) deploying 100% of capital across an institutional 15-stock allocation matrix.
 
 ---
 
 ## 🚀 Key Features & Enhancements
 
-### 1. S&P 500 & NASDAQ 100 Outperformance Screener (Replaces WATCHLIST)
+### 1. S&P 500 & NASDAQ 100 Outperformance Screener (2-Year Default & Multi-Sector)
 - Analyzes all constituent companies across both the **S&P 500** and **NASDAQ 100** indices.
-- Evaluates individual historical compound growth (10-Year CAGR, 20-Year CAGR, 5-Year CAGR, and 1-Year Return) against:
-  - **S&P 500 Benchmark Average (SPY)**: 10Y CAGR = 12.8%
-  - **NASDAQ 100 Benchmark Average (QQQ)**: 10Y CAGR = 18.2%
-  - **Total Market Benchmark Average (VTI)**: 10Y CAGR = 12.3%
-- Curates an extensive universe of **86 market-beating compounders** across Technology, Semiconductors, Software, Healthcare, Industrials, Consumer, and Financials.
-- `AlphaStockScreener.WATCHLIST` in `basic_multi_agent_system.py` now directly reflects these market beaters.
+- Evaluates individual historical compound growth against:
+  - **S&P 500 Benchmark Average (SPY)**: 2Y CAGR = 16.3%, 2Y Return = 35.3%
+  - **NASDAQ 100 Benchmark Average (QQQ)**: 2Y CAGR = 17.5%, 2Y Return = 38.1%
+  - **Total Market Benchmark Average (VTI)**: 2Y CAGR = 12.9%, 2Y Return = 27.5%
+- Curates a diverse universe of market-beating compounders across Clean Power/Nuclear, Aerospace, Semiconductors, Networking, Cybersecurity, Financial Analytics, and Industrials.
+- Enforces an institutional **cross-sector diversification constraint** (maximum 3 stocks per sector).
 
 ### 2. Time-Travel Backtesting & Operations History Engine
 - Set any historical start date (e.g., `--lookback 1y`, `--lookback 2y`, or `--start-date 2025-10-12`).
 - **Simulates Strategy Execution**:
-  - Initial capital deployment based on Markowitz Max-Sharpe or Equal Weighting.
-  - Opportunistic **Tranche Accumulation on Pullbacks** (buying 4-10% dips in strong uptrends).
-  - **Trailing Stop-Loss Protection** (exits positions if price falls 15% from local high).
-  - **Take-Profit Tranche Harvesting** (locks in gains by trimming 25% at +30% profit target).
+  - Initial capital deployment based on Markowitz Max-Sharpe portfolio optimization.
+  - **Adaptive ATR Trailing Stops** ($4.0 \times \text{ATR}_{14}$, dynamically adapting to each asset's volatility).
+  - **Quarterly Walk-Forward Universe Re-screening** (re-evaluates relative strength every 60 days, rotates out of decaying laggards into emerging leaders).
+  - **Trend Re-entry Confirmation** (redeploys cash into stocks reclaiming 20-day SMA, eliminating idle cash drag).
   - **Periodic Drift Rebalancing** (controls risk by trimming over-concentrated positions).
-- **Chronological History of Operations**: Every transaction is logged with Date, Action, Symbol, Shares, Price, Notional, Remaining Cash, Total Portfolio Value, and Reason.
+- **Chronological History of Operations**: Every transaction is logged with Date, Action, Symbol, Shares, Price, Notional, Remaining Cash, Total Portfolio Value, and Trigger Reason.
 - **Benchmark Scorecard**: Compares the strategy's total return, CAGR, volatility, Sharpe ratio, and maximum drawdown side-by-side against **VTI**, **QQQ**, and **SPY**.
 
 ---
