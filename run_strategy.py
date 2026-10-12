@@ -25,7 +25,10 @@ if current_dir not in sys.path:
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from tradingStrategy.orchestrator import InstitutionalTradingSystem
+try:
+    from tradingStrategy.orchestrator import InstitutionalTradingSystem
+except ImportError:
+    from orchestrator import InstitutionalTradingSystem
 
 
 def main():

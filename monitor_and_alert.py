@@ -30,8 +30,12 @@ for p in [current_dir, parent_dir]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from tradingStrategy.paper_trading_simulator import PaperTradingSimulator
-from tradingStrategy.portfolio_optimizer import PortfolioOptimizer
+try:
+    from tradingStrategy.paper_trading_simulator import PaperTradingSimulator
+    from tradingStrategy.portfolio_optimizer import PortfolioOptimizer
+except ImportError:
+    from paper_trading_simulator import PaperTradingSimulator
+    from portfolio_optimizer import PortfolioOptimizer
 
 
 class RiskAndAlertMonitor:

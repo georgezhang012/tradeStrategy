@@ -10,8 +10,12 @@ Implements an adversarial, institutional decision-making team:
 """
 
 from typing import Dict, Any, List
-from .valuation_engine import ValuationEngine
-from .risk_engine import RiskEngine
+try:
+    from .valuation_engine import ValuationEngine
+    from .risk_engine import RiskEngine
+except (ImportError, ValueError):
+    from valuation_engine import ValuationEngine
+    from risk_engine import RiskEngine
 
 
 class MacroFactorAgent:

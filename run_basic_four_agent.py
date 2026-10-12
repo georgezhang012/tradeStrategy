@@ -112,14 +112,31 @@ def run_autogen_groupchat(years: int, symbol: str = None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Multi-Agent Stock Investment System")
+    parser = argparse.ArgumentParser(description="Multi-Agent Stock Investment System & Backtester")
     parser.add_argument("--years", type=int, default=10, choices=[10, 20], help="Historical comparison horizon (10 or 20 years)")
     parser.add_argument("--symbol", type=str, default=None, help="Target stock ticker (e.g., NVDA, MSFT, AAPL)")
     parser.add_argument("--autogen", action="store_true", help="Run via AutoGen GroupChat with LLM")
+    parser.add_argument("--backtest", action="store_true", help="Run historical strategy backtest with operation history and benchmark comparison")
+    parser.add_argument("--lookback", type=str, default="1y", help="Backtest lookback window (e.g., '1y', '2y', '6m')")
+    parser.add_argument("--start-date", type=str, default=None, help="Backtest start date (YYYY-MM-DD), e.g. 2025-10-12")
+    parser.add_argument("--end-date", type=str, default=None, help="Backtest end date (YYYY-MM-DD), e.g. 2026-10-12")
+    parser.add_argument("--capital", type=float, default=100000.0, help="Initial capital in USD (default: $100,000)")
+    parser.add_argument("--top-n", type=int, default=5, help="Number of top screened compounders to trade (default: 5)")
 
     args = parser.parse_args()
 
-    if args.autogen:
+    if args.backtest:
+        system = MultiAgentStockSystem()
+        report = system.run_backtest_and_print(
+            lookback=args.lookback,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            symbol=args.symbol,
+            top_n=args.top_n,
+            capital=args.capital
+        )
+        print("\n" + report)
+    elif args.autogen:
         run_autogen_groupchat(years=args.years, symbol=args.symbol)
     else:
         run_standalone(years=args.years, symbol=args.symbol)

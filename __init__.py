@@ -21,6 +21,10 @@ from .orchestrator import InstitutionalTradingSystem
 from .portfolio_optimizer import PortfolioOptimizer
 from .paper_trading_simulator import PaperTradingSimulator
 from .alpaca_paper_trader import AlpacaPaperTrader
+from .sp500_nasdaq_screener import SP500NasdaqScreener
+from .historical_data_feed import HistoricalDataFeed
+from .backtest_engine import BacktestEngine
+from .basic_multi_agent_system import MultiAgentStockSystem, AlphaStockScreener
 
 __all__ = [
     "ValuationEngine",
@@ -33,6 +37,11 @@ __all__ = [
     "InstitutionalTradingSystem",
     "PortfolioOptimizer",
     "PaperTradingSimulator",
-    "AlpacaPaperTrader"
+    "AlpacaPaperTrader",
+    "SP500NasdaqScreener",
+    "HistoricalDataFeed",
+    "BacktestEngine",
+    "MultiAgentStockSystem",
+    "AlphaStockScreener"
 ]
 

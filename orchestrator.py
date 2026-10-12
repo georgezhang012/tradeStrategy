@@ -6,13 +6,22 @@ Macro -> Valuation (Reverse DCF) -> Bull Pitch -> Bear Red Team -> CRO Adjudicat
 """
 
 from typing import Dict, Any, Optional
-from .agents import (
-    MacroFactorAgent,
-    ValuationExpectationsAgent,
-    BullResearchAgent,
-    BearResearchAgent,
-    ChiefRiskOfficerAgent
-)
+try:
+    from .agents import (
+        MacroFactorAgent,
+        ValuationExpectationsAgent,
+        BullResearchAgent,
+        BearResearchAgent,
+        ChiefRiskOfficerAgent
+    )
+except (ImportError, ValueError):
+    from agents import (
+        MacroFactorAgent,
+        ValuationExpectationsAgent,
+        BullResearchAgent,
+        BearResearchAgent,
+        ChiefRiskOfficerAgent
+    )
 
 
 class InstitutionalTradingSystem:

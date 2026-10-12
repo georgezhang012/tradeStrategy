@@ -25,10 +25,16 @@ for p in [current_dir, parent_dir]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from tradingStrategy.portfolio_optimizer import PortfolioOptimizer
-from tradingStrategy.paper_trading_simulator import PaperTradingSimulator
-from tradingStrategy.orchestrator import InstitutionalTradingSystem
-from tradingStrategy.alpaca_paper_trader import AlpacaPaperTrader
+try:
+    from tradingStrategy.portfolio_optimizer import PortfolioOptimizer
+    from tradingStrategy.paper_trading_simulator import PaperTradingSimulator
+    from tradingStrategy.orchestrator import InstitutionalTradingSystem
+    from tradingStrategy.alpaca_paper_trader import AlpacaPaperTrader
+except ImportError:
+    from portfolio_optimizer import PortfolioOptimizer
+    from paper_trading_simulator import PaperTradingSimulator
+    from orchestrator import InstitutionalTradingSystem
+    from alpaca_paper_trader import AlpacaPaperTrader
 
 
 def run_investment_platform(

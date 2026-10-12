@@ -18,6 +18,13 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 import pandas as pd
 
+try:
+    from .sp500_nasdaq_screener import SP500NasdaqScreener
+    from .backtest_engine import BacktestEngine
+except (ImportError, ValueError):
+    from sp500_nasdaq_screener import SP500NasdaqScreener
+    from backtest_engine import BacktestEngine
+
 
 # ==============================================================================
 # 1. TOOLING & DATA SOURCES
@@ -75,77 +82,69 @@ class MacroDataFetcher:
 class AlphaStockScreener:
     """
     Screens major S&P 500 and NASDAQ 100 companies that have consistently
-    beaten the S&P 500 (SPY) over a 10-year or 20-year period.
+    beaten their corresponding benchmark averages (S&P 500 / SPY and NASDAQ 100 / QQQ)
+    over 10-year, 20-year, 5-year, or 1-year periods.
     """
 
-    # Major blue-chip and high-growth candidates from S&P 500 and NASDAQ 100
-    WATCHLIST = [
-        {"symbol": "NVDA", "name": "NVIDIA Corporation", "sector": "Semiconductors"},
-        {"symbol": "AAPL", "name": "Apple Inc.", "sector": "Technology Hardware"},
-        {"symbol": "MSFT", "name": "Microsoft Corporation", "sector": "Software & Cloud"},
-        {"symbol": "AMZN", "name": "Amazon.com Inc.", "sector": "E-Commerce & Cloud"},
-        {"symbol": "GOOGL", "name": "Alphabet Inc.", "sector": "Internet & Search"},
-        {"symbol": "META", "name": "Meta Platforms Inc.", "sector": "Social Media & AI"},
-        {"symbol": "AVGO", "name": "Broadcom Inc.", "sector": "Semiconductors"},
-        {"symbol": "COST", "name": "Costco Wholesale", "sector": "Consumer Staples"},
-        {"symbol": "LLY", "name": "Eli Lilly and Company", "sector": "Healthcare/Pharma"},
-        {"symbol": "AMD", "name": "Advanced Micro Devices", "sector": "Semiconductors"},
-        {"symbol": "UNH", "name": "UnitedHealth Group", "sector": "Healthcare"},
-        {"symbol": "ADBE", "name": "Adobe Inc.", "sector": "Software"}
-    ]
+    # Comprehensive market-beating watchlist derived from full S&P 500 & NASDAQ 100 universe
+    # (Replaces the legacy 12-stock list with all verified market-beating compounders)
+    WATCHLIST = SP500NasdaqScreener.generate_enhanced_watchlist()
 
-    # Pre-calculated verified 10-year and 20-year CAGR performance vs S&P 500, VTI, and QQQ
-    HISTORICAL_METRICS = {
-        "SPY": {"cagr_10y": 12.8, "return_10y": 234.0, "cagr_20y": 10.2, "return_20y": 580.0},
-        "VTI": {"cagr_10y": 12.3, "return_10y": 218.0, "cagr_20y": 9.9, "return_20y": 550.0},
-        "QQQ": {"cagr_10y": 18.2, "return_10y": 432.0, "cagr_20y": 14.8, "return_20y": 1480.0},
-        "NVDA": {"cagr_10y": 57.4, "return_10y": 9250.0, "cagr_20y": 36.8, "return_20y": 48200.0},
-        "AAPL": {"cagr_10y": 24.6, "return_10y": 801.0, "cagr_20y": 28.5, "return_20y": 13900.0},
-        "MSFT": {"cagr_10y": 26.2, "return_10y": 930.0, "cagr_20y": 16.9, "return_20y": 2200.0},
-        "AMZN": {"cagr_10y": 22.8, "return_10y": 680.0, "cagr_20y": 24.1, "return_20y": 7400.0},
-        "GOOGL": {"cagr_10y": 19.4, "return_10y": 490.0, "cagr_20y": 20.3, "return_20y": 4100.0},
-        "AVGO": {"cagr_10y": 38.5, "return_10y": 2450.0, "cagr_20y": 27.2, "return_20y": 11200.0},
-        "COST": {"cagr_10y": 20.5, "return_10y": 546.0, "cagr_20y": 15.8, "return_20y": 1850.0},
-        "LLY": {"cagr_10y": 29.8, "return_10y": 1260.0, "cagr_20y": 17.5, "return_20y": 2480.0},
-        "META": {"cagr_10y": 21.9, "return_10y": 625.0, "cagr_20y": None, "return_20y": None}, # IPO 2012
-        "AMD": {"cagr_10y": 42.1, "return_10y": 3200.0, "cagr_20y": 18.2, "return_20y": 2800.0},
-        "ADBE": {"cagr_10y": 18.5, "return_10y": 445.0, "cagr_20y": 15.2, "return_20y": 1650.0},
-        "UNH": {"cagr_10y": 17.8, "return_10y": 415.0, "cagr_20y": 16.1, "return_20y": 1950.0}
-    }
+    # Pre-calculated verified historical metrics for benchmarks (SPY, VTI, QQQ) and all market beaters
+    HISTORICAL_METRICS = SP500NasdaqScreener.generate_historical_metrics_dict()
 
     @classmethod
-    def screen_beaters(cls, horizon_years: int = 10, min_alpha: float = 3.0) -> List[Dict[str, Any]]:
+    def screen_beaters(
+        cls,
+        horizon_years: int = 10,
+        min_alpha: float = 3.0,
+        index_filter: str = "both"
+    ) -> List[Dict[str, Any]]:
         """
-        Screens companies from S&P 500 / NASDAQ whose CAGR beat S&P 500
-        over the specified horizon (10 or 20 years).
+        Screens companies from S&P 500 / NASDAQ whose CAGR beat S&P 500 / NASDAQ 100
+        over the specified horizon (10, 20, 5, or 1 year).
         """
         spy_metric = cls.HISTORICAL_METRICS["SPY"]
-        benchmark_cagr = spy_metric[f"cagr_{horizon_years}y"]
-        benchmark_return = spy_metric[f"return_{horizon_years}y"]
+        qqq_metric = cls.HISTORICAL_METRICS["QQQ"]
+
+        horizon_key = f"cagr_{horizon_years}y" if horizon_years in [10, 20, 5] else f"return_{horizon_years}y"
+        benchmark_cagr = spy_metric.get(horizon_key, spy_metric["cagr_10y"])
+        benchmark_return = spy_metric.get(f"return_{horizon_years}y", spy_metric["return_10y"])
+        qqq_cagr = qqq_metric.get(horizon_key, qqq_metric["cagr_10y"])
 
         results = []
         for item in cls.WATCHLIST:
             sym = item["symbol"]
             metrics = cls.HISTORICAL_METRICS.get(sym, {})
-            cagr = metrics.get(f"cagr_{horizon_years}y")
-            tot_return = metrics.get(f"return_{horizon_years}y")
+            cagr = metrics.get(horizon_key, metrics.get("cagr_10y"))
+            tot_return = metrics.get(f"return_{horizon_years}y", metrics.get("return_10y", 0.0))
+
+            # Apply index filter if requested
+            if index_filter == "sp500" and "S&P 500" not in item.get("index", "") and item.get("index") != "Both":
+                continue
+            if index_filter == "nasdaq100" and "NASDAQ 100" not in item.get("index", "") and item.get("index") != "Both":
+                continue
 
             if cagr is not None and cagr > (benchmark_cagr + min_alpha):
-                alpha = round(cagr - benchmark_cagr, 2)
+                alpha_spy = round(cagr - benchmark_cagr, 2)
+                alpha_qqq = round(cagr - qqq_cagr, 2)
                 results.append({
                     "symbol": sym,
                     "name": item["name"],
                     "sector": item["sector"],
+                    "index": item.get("index", "S&P 500 / NASDAQ"),
+                    "beat_benchmark": item.get("beat_benchmark", "Both"),
                     "horizon_years": horizon_years,
                     "cagr": cagr,
                     "total_return_pct": tot_return,
                     "benchmark_cagr": benchmark_cagr,
                     "benchmark_total_return_pct": benchmark_return,
-                    "alpha_over_sp500": alpha,
-                    "outperformance_multiple": round(tot_return / benchmark_return, 1)
+                    "alpha_over_sp500": alpha_spy,
+                    "alpha_over_qqq": alpha_qqq,
+                    "outperformance_multiple": round(tot_return / benchmark_return, 1) if benchmark_return else 1.0
                 })
 
-        # Rank by Alpha over S&P 500
+        # Rank by Alpha over S&P 500 descending
         results.sort(key=lambda x: x["alpha_over_sp500"], reverse=True)
         return results
 
@@ -460,6 +459,59 @@ class MultiAgentStockSystem:
 
         return full_report
 
+    def backtest(
+        self,
+        lookback: str = "1y",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        symbol: Optional[str] = None,
+        symbols: Optional[List[str]] = None,
+        top_n: int = 5,
+        capital: float = 100000.0,
+        trailing_stop_pct: float = 0.20,
+        take_profit_pct: float = 0.80
+    ) -> Dict[str, Any]:
+        """
+        Executes a historical backtest of the strategy starting from a past time
+        (e.g., '1 year ago', '2025-10-12', '2y'), tracking the full chronological
+        history of operations, and benchmarking returns against VTI and QQQ.
+        """
+        target_syms = [symbol.upper()] if symbol else symbols
+        engine = BacktestEngine(initial_capital=capital)
+        results = engine.run_backtest(
+            lookback=lookback,
+            start_date=start_date,
+            end_date=end_date,
+            symbols=target_syms,
+            top_n=top_n,
+            trailing_stop_pct=trailing_stop_pct,
+            take_profit_pct=take_profit_pct
+        )
+        return results
+
+    def run_backtest_and_print(
+        self,
+        lookback: str = "1y",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        symbol: Optional[str] = None,
+        symbols: Optional[List[str]] = None,
+        top_n: int = 5,
+        capital: float = 100000.0
+    ) -> str:
+        """Runs the backtest and returns a formatted report string."""
+        results = self.backtest(
+            lookback=lookback,
+            start_date=start_date,
+            end_date=end_date,
+            symbol=symbol,
+            symbols=symbols,
+            top_n=top_n,
+            capital=capital
+        )
+        report = BacktestEngine.format_backtest_report(results)
+        return report
+
 
 # ==============================================================================
 # 4. AUTOGEN INTEGRATION COMPATIBILITY
@@ -512,10 +564,21 @@ def build_autogen_group_config(llm_config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    years = 10
-    if len(sys.argv) > 1 and sys.argv[1].isdigit():
-        years = int(sys.argv[1])
-
     system = MultiAgentStockSystem()
-    report = system.run_full_pipeline(horizon_years=years)
-    print("\n" + report)
+
+    if "--backtest" in sys.argv:
+        lb = "1y"
+        sym = None
+        for i, arg in enumerate(sys.argv):
+            if arg == "--lookback" and i + 1 < len(sys.argv):
+                lb = sys.argv[i + 1]
+            if arg == "--symbol" and i + 1 < len(sys.argv):
+                sym = sys.argv[i + 1]
+        report = system.run_backtest_and_print(lookback=lb, symbol=sym)
+        print("\n" + report)
+    else:
+        years = 10
+        if len(sys.argv) > 1 and sys.argv[1].isdigit():
+            years = int(sys.argv[1])
+        report = system.run_full_pipeline(horizon_years=years)
+        print("\n" + report)
