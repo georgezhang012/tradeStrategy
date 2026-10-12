@@ -1,0 +1,114 @@
+{
+  "initial_cash": 100000.0,
+  "cash": 811.4099999999962,
+  "realized_pnl": 0.0,
+  "positions": {
+    "NVDA": {
+      "symbol": "NVDA",
+      "shares": 155,
+      "avg_cost": 130.06,
+      "current_price": 130.06,
+      "stop_loss": 118.3,
+      "take_profit": 158.6,
+      "side": "LONG"
+    },
+    "MSFT": {
+      "symbol": "MSFT",
+      "shares": 66,
+      "avg_cost": 420.21,
+      "current_price": 420.21,
+      "stop_loss": 382.2,
+      "take_profit": 512.4,
+      "side": "LONG"
+    },
+    "AAPL": {
+      "symbol": "AAPL",
+      "shares": 25,
+      "avg_cost": 230.11,
+      "current_price": 230.11,
+      "stop_loss": 209.3,
+      "take_profit": 280.6,
+      "side": "LONG"
+    },
+    "AMZN": {
+      "symbol": "AMZN",
+      "shares": 32,
+      "avg_cost": 185.09,
+      "current_price": 185.09,
+      "stop_loss": 168.35,
+      "take_profit": 225.7,
+      "side": "LONG"
+    },
+    "COST": {
+      "symbol": "COST",
+      "shares": 45,
+      "avg_cost": 880.44,
+      "current_price": 880.44,
+      "stop_loss": 800.8,
+      "take_profit": 1073.6,
+      "side": "LONG"
+    }
+  },
+  "trade_history": [
+    {
+      "timestamp": "2026-10-12 11:16:30",
+      "symbol": "NVDA",
+      "action": "BUY",
+      "shares": 155,
+      "execution_price": 130.06,
+      "notional": 20159.3,
+      "cash_remaining": 79840.7,
+      "stop_loss": 118.3,
+      "take_profit": 158.6,
+      "notes": "Optimal Sharpe Allocation (20.2%)"
+    },
+    {
+      "timestamp": "2026-10-12 11:16:30",
+      "symbol": "MSFT",
+      "action": "BUY",
+      "shares": 66,
+      "execution_price": 420.21,
+      "notional": 27733.86,
+      "cash_remaining": 52106.84,
+      "stop_loss": 382.2,
+      "take_profit": 512.4,
+      "notes": "Optimal Sharpe Allocation (27.7%)"
+    },
+    {
+      "timestamp": "2026-10-12 11:16:30",
+      "symbol": "AAPL",
+      "action": "BUY",
+      "shares": 25,
+      "execution_price": 230.11,
+      "notional": 5752.75,
+      "cash_remaining": 46354.09,
+      "stop_loss": 209.3,
+      "take_profit": 280.6,
+      "notes": "Optimal Sharpe Allocation (5.8%)"
+    },
+    {
+      "timestamp": "2026-10-12 11:16:30",
+      "symbol": "AMZN",
+      "action": "BUY",
+      "shares": 32,
+      "execution_price": 185.09,
+      "notional": 5922.88,
+      "cash_remaining": 40431.21,
+      "stop_loss": 168.35,
+      "take_profit": 225.7,
+      "notes": "Optimal Sharpe Allocation (6.0%)"
+    },
+    {
+      "timestamp": "2026-10-12 11:16:30",
+      "symbol": "COST",
+      "action": "BUY",
+      "shares": 45,
+      "execution_price": 880.44,
+      "notional": 39619.8,
+      "cash_remaining": 811.41,
+      "stop_loss": 800.8,
+      "take_profit": 1073.6,
+      "notes": "Optimal Sharpe Allocation (40.3%)"
+    }
+  ]
+}
