@@ -41,7 +41,7 @@ def main():
     parser.add_argument("--capital", type=float, default=100000.0, help="Initial portfolio capital in USD (default: $100,000)")
     parser.add_argument("--symbol", type=str, default=None, help="Single target stock symbol (e.g., NVDA, MSFT, AAPL, COST)")
     parser.add_argument("--symbols", nargs="+", default=None, help="List of custom target stock symbols (e.g., NVDA MSFT COST LLY)")
-    parser.add_argument("--top-n", type=int, default=5, help="Number of top screened compounders to hold (default: 5)")
+    parser.add_argument("--top-n", type=int, default=15, help="Number of top screened compounders to hold (default: 15)")
     parser.add_argument("--stop-loss", type=float, default=0.20, help="Trailing stop loss threshold (default: 0.20 for 20%%)")
     parser.add_argument("--take-profit", type=float, default=0.50, help="Take profit target threshold (default: 0.50 for 50%%)")
     parser.add_argument("--rebalance-days", type=int, default=60, help="Portfolio rebalancing interval in trading days (default: 60)")

@@ -82,17 +82,34 @@ class PortfolioOptimizer:
     }
 
     @classmethod
+    def get_asset_stats(cls, symbol: str) -> Dict[str, float]:
+        """Retrieves asset expected return and volatility dynamically from screener metrics."""
+        if symbol in cls.ASSET_STATS:
+            return cls.ASSET_STATS[symbol]
+        try:
+            from sp500_nasdaq_screener import SP500NasdaqScreener
+            metrics = SP500NasdaqScreener.generate_historical_metrics_dict().get(symbol, {})
+            cagr = metrics.get("cagr_2y", metrics.get("cagr_5y", metrics.get("cagr_10y", 16.0)))
+            if cagr is None:
+                cagr = 16.0
+            exp_ret = max(0.10, min(0.65, float(cagr) / 100.0))
+            vol = 0.30 if exp_ret > 0.35 else (0.24 if exp_ret > 0.20 else 0.19)
+            return {"expected_return": exp_ret, "volatility": vol}
+        except Exception:
+            return {"expected_return": 0.16, "volatility": 0.24}
+
+    @classmethod
     def build_covariance_matrix(cls, symbols: List[str]) -> Tuple[np.ndarray, np.ndarray]:
         """Constructs annualized expected returns vector and covariance matrix."""
         n = len(symbols)
-        returns = np.array([cls.ASSET_STATS.get(s, {"expected_return": 0.12})["expected_return"] for s in symbols])
-        vols = np.array([cls.ASSET_STATS.get(s, {"volatility": 0.25})["volatility"] for s in symbols])
+        returns = np.array([cls.get_asset_stats(s)["expected_return"] for s in symbols])
+        vols = np.array([cls.get_asset_stats(s)["volatility"] for s in symbols])
         
         corr_matrix = np.eye(n)
         for i in range(n):
             for j in range(i + 1, n):
                 s1, s2 = symbols[i], symbols[j]
-                c = cls.DEFAULT_CORRELATIONS.get((s1, s2), cls.DEFAULT_CORRELATIONS.get((s2, s1), 0.45))
+                c = cls.DEFAULT_CORRELATIONS.get((s1, s2), cls.DEFAULT_CORRELATIONS.get((s2, s1), 0.40))
                 corr_matrix[i, j] = c
                 corr_matrix[j, i] = c
 
@@ -105,12 +122,12 @@ class PortfolioOptimizer:
         cls,
         symbols: List[str],
         risk_free_rate: float = 0.045, # 4.5% Treasury yield
-        max_weight_per_asset: float = 0.35, # 35% concentration limit
-        min_weight_per_asset: float = 0.05  # 5% minimum allocation
+        max_weight_per_asset: float = 0.25, # 25% max concentration limit
+        min_weight_per_asset: float = 0.02  # 2% minimum allocation
     ) -> Dict[str, Any]:
         """
         Calculates the Maximum Sharpe Ratio Portfolio weights.
-        Maximizes: (E[R] - Rf) / Portfolio_Volatility
+        Maximizes: (E[R] - Rf) / Portfolio_Volatility with institutional breadth constraints.
         """
         returns, cov_matrix = cls.build_covariance_matrix(symbols)
         n = len(symbols)
@@ -127,8 +144,10 @@ class PortfolioOptimizer:
         else:
             positive_weights /= np.sum(positive_weights)
 
-        # Apply concentration boundaries via iterative clipping
-        weights = np.clip(positive_weights, min_weight_per_asset, max_weight_per_asset)
+        # Apply institutional concentration boundaries scaled dynamically to portfolio size
+        eff_max = min(max_weight_per_asset, max(0.08, 2.2 / n)) if n >= 5 else 0.40
+        eff_min = max(0.01, min(0.04, 0.4 / n)) if n >= 5 else 0.05
+        weights = np.clip(positive_weights, eff_min, eff_max)
         weights /= np.sum(weights)
 
         # Calculate portfolio metrics

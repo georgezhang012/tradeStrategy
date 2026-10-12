@@ -47,7 +47,7 @@ class BacktestEngine:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         symbols: Optional[List[str]] = None,
-        top_n: int = 5,
+        top_n: int = 15,
         trailing_stop_pct: float = 0.20,
         take_profit_pct: float = 0.50,
         rebalance_days: int = 60
@@ -55,7 +55,7 @@ class BacktestEngine:
         """
         Executes historical backtest:
         1. Resolves time window (e.g., 1 year ago to today).
-        2. Selects candidate assets (either user-provided or top screened market-beaters).
+        2. Selects candidate assets (either user-provided or top screened market-beaters across diverse sectors).
         3. Simulates initial capital allocation and order fills.
         4. Simulates daily trading path, enforcing trailing stops, take-profit trims, and rebalancing.
         5. Simultaneously runs identical buy-and-hold benchmarks for VTI, QQQ, and SPY.
@@ -65,10 +65,26 @@ class BacktestEngine:
         start_str = start_dt.strftime("%Y-%m-%d")
         end_str = end_dt.strftime("%Y-%m-%d")
 
-        # 1. Determine Universe
+        # 1. Determine Universe with Institutional Cross-Sector Diversification
         if not symbols:
-            screened_beaters = SP500NasdaqScreener.screen_outperformers(horizon_years=10, min_alpha=5.0)
-            selected_assets = [b["symbol"] for b in screened_beaters[:top_n]]
+            screened_beaters = SP500NasdaqScreener.screen_outperformers(horizon_years=2, min_alpha=0.0)
+            selected_assets = []
+            sector_counts: Dict[str, int] = {}
+            # Enforce max 3 stocks per sector for institutional risk diversification
+            for b in screened_beaters:
+                sec = b.get("sector", "Other")
+                if sector_counts.get(sec, 0) < 3:
+                    sector_counts[sec] = sector_counts.get(sec, 0) + 1
+                    selected_assets.append(b["symbol"])
+                if len(selected_assets) == top_n:
+                    break
+            # Fallback if sector limit was too strict
+            if len(selected_assets) < top_n:
+                for b in screened_beaters:
+                    if b["symbol"] not in selected_assets:
+                        selected_assets.append(b["symbol"])
+                    if len(selected_assets) == top_n:
+                        break
         else:
             selected_assets = [s.upper() for s in symbols]
 
