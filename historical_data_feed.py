@@ -11,6 +11,7 @@ Supports:
 """
 
 import math
+import hashlib
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Tuple, Optional
 import numpy as np
@@ -256,7 +257,9 @@ class HistoricalDataFeed:
         end_price = cls.get_target_price_at_date(sym, end_date)
 
         # Generate realistic Brownian bridge ensuring exact start and end prices
-        np.random.seed(abs(hash(sym + start_date.strftime("%Y%m%d") + end_date.strftime("%Y%m%d"))) % (2**31 - 1))
+        seed_key = f"{sym}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
+        seed_val = int(hashlib.md5(seed_key.encode('utf-8')).hexdigest()[:8], 16)
+        np.random.seed(seed_val)
         daily_vol = catalog["volatility"] / math.sqrt(252)
 
         # Random walk increments

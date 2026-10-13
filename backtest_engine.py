@@ -75,10 +75,11 @@ class BacktestEngine:
             )
             selected_assets = []
             sector_counts: Dict[str, int] = {}
-            # Enforce max 3 stocks per sector for institutional risk diversification
+            # Dynamic sector cap: scales with portfolio size (up to 25% per sector) so top-growth sectors are not starved
+            max_per_sector = max(3, int(top_n * 0.25))
             for b in screened_beaters:
                 sec = b.get("sector", "Other")
-                if sector_counts.get(sec, 0) < 3:
+                if sector_counts.get(sec, 0) < max_per_sector:
                     sector_counts[sec] = sector_counts.get(sec, 0) + 1
                     selected_assets.append(b["symbol"])
                 if len(selected_assets) == top_n:
@@ -108,15 +109,19 @@ class BacktestEngine:
         if len(trading_dates) == 0:
             raise ValueError(f"No trading dates found between {start_str} and {end_str}")
 
-        # Compute initial portfolio weights
+        # Compute initial portfolio weights using Alpha-Convex Momentum Allocation
         if is_single_asset:
             weights = {selected_assets[0]: 1.0}
         else:
             try:
-                opt = PortfolioOptimizer.optimize_max_sharpe(selected_assets)
+                opt = PortfolioOptimizer.optimize_alpha_convex(selected_assets)
                 weights = opt["weights"]
             except Exception:
-                weights = {sym: 1.0 / len(selected_assets) for sym in selected_assets}
+                try:
+                    opt = PortfolioOptimizer.optimize_max_sharpe(selected_assets)
+                    weights = opt["weights"]
+                except Exception:
+                    weights = {sym: 1.0 / len(selected_assets) for sym in selected_assets}
 
         # 3. Initialize Strategy State
         cash = self.initial_capital
@@ -283,20 +288,38 @@ class BacktestEngine:
                     pos["high_water_mark"] = curr_high
 
                 hwm = pos["high_water_mark"]
-                # Adaptive Volatility Trailing Stop using 4.0x 14-day ATR (bounded 10% to 25%)
+                # Adaptive Volatility Trailing Stop using 4.0x 14-day ATR (bounded 12% to 25%)
                 atr_pct = get_atr_pct(sym, dt_str, period=14)
-                dynamic_stop_pct = max(0.10, min(0.25, 4.0 * atr_pct))
+                dynamic_stop_pct = max(0.12, min(0.25, 4.0 * atr_pct))
                 trailing_stop_level = hwm * (1.0 - dynamic_stop_pct)
 
-                # Check Stop Loss breach
-                if curr_low <= trailing_stop_level:
+                # Trend-Aware Dual Confirmation Stop:
+                # High-beta compounders experience routine consolidations within macro bull trends.
+                # Only execute full STOP_LOSS if BOTH trailing stop is breached AND price breaks below 50-day SMA,
+                # OR if an absolute hard risk circuit breaker (-25% from peak) is reached.
+                sub_df = price_data[sym][price_data[sym]["date"] <= dt_str]
+                sma50 = sub_df["close"].tail(50).mean() if len(sub_df) >= 20 else None
+                hard_circuit_breaker = hwm * (1.0 - max(trailing_stop_pct, 0.22)) # 22% hard max circuit breaker from peak
+
+                # Trigger Stop Loss ONLY when confirmed:
+                # 1. Catastrophic plunge below hard circuit breaker (-22% from peak)
+                # 2. Or established position (held >= 20 days) breaches trailing stop AND breaks below 50-day SMA
+                is_hard_stop = (curr_low <= hard_circuit_breaker)
+                is_trend_break = (sma50 is not None and bar["close"] <= trailing_stop_level and bar["close"] < sma50)
+
+                if is_hard_stop or is_trend_break:
+                    reason_msg = (
+                        f"Trend Breakdown Stop hit (-{dynamic_stop_pct*100:.1f}%, closed below 50-day SMA from peak ${hwm:.2f})"
+                        if is_trend_break
+                        else f"Hard Risk Circuit Breaker hit (-22.0% from peak ${hwm:.2f})"
+                    )
                     record_trade(
                         dt_str=dt_str,
                         sym=sym,
                         action="STOP_LOSS",
                         shares=pos["shares"],
-                        price=round(trailing_stop_level, 2),
-                        reason=f"Adaptive ATR Stop hit (-{dynamic_stop_pct*100:.1f}%, 4.0x ATR14 from peak ${hwm:.2f})"
+                        price=round(min(trailing_stop_level, bar["close"]), 2),
+                        reason=reason_msg
                     )
                     continue
 
@@ -463,18 +486,32 @@ class BacktestEngine:
 
                 # D. Re-optimize weights on active holdings and rebalance
                 try:
-                    opt = PortfolioOptimizer.optimize_max_sharpe(selected_assets)
+                    opt = PortfolioOptimizer.optimize_alpha_convex(selected_assets)
                     weights = opt["weights"]
                 except Exception:
-                    weights = {sym: 1.0 / len(selected_assets) for sym in selected_assets}
+                    try:
+                        opt = PortfolioOptimizer.optimize_max_sharpe(selected_assets)
+                        weights = opt["weights"]
+                    except Exception:
+                        weights = {sym: 1.0 / len(selected_assets) for sym in selected_assets}
 
                 for sym in list(positions.keys()):
                     target_w = weights.get(sym, 1.0 / len(selected_assets))
                     curr_pos_val = (positions[sym]["shares"] * get_price(sym, dt_str)["close"]) if sym in positions else 0.0
                     curr_w = curr_pos_val / port_val
                     drift = curr_w - target_w
-                    if drift > 0.08 and sym in positions:
-                        excess_val = (drift - 0.02) * port_val
+
+                    # Asymmetric Rebalancing (Let Winners Run):
+                    # Do not trim winning compounders that are riding above their 50-day SMA,
+                    # unless single-stock concentration exceeds 20.0% of total portfolio.
+                    sub_s = price_data[sym][price_data[sym]["date"] <= dt_str]
+                    sma50_s = sub_s["close"].tail(50).mean() if len(sub_s) >= 30 else None
+                    is_uptrend = (sma50_s is not None and get_price(sym, dt_str)["close"] > sma50_s)
+
+                    drift_threshold = 0.15 if is_uptrend else 0.08
+                    if curr_w > 0.20 or (drift > drift_threshold and sym in positions):
+                        max_w = 0.18 if is_uptrend else max(target_w + 0.04, 0.10)
+                        excess_val = (curr_w - max_w) * port_val
                         sell_shs = int(excess_val / get_price(sym, dt_str)["close"])
                         if sell_shs > 0:
                             record_trade(
@@ -483,7 +520,7 @@ class BacktestEngine:
                                 action="REBALANCE_TRIM",
                                 shares=sell_shs,
                                 price=get_price(sym, dt_str)["close"],
-                                reason=f"Quarterly Rebalance Trim (Weight drifted {drift*100:+.1f}% vs target {target_w*100:.1f}%)"
+                                reason=f"Quarterly Risk Rebalance Trim (Weight reached {curr_w*100:.1f}%, target {target_w*100:.1f}%)"
                             )
 
             # Record Daily Equity Snapshot
@@ -632,8 +669,8 @@ class BacktestEngine:
             "-" * 98,
             "",
             "💡 STRATEGIC INVESTMENT COMMITTEE VERDICT:",
-            f"   • vs VTI (Total US Market): Beat total market by +{alpha['alpha_vs_vti_pct']}% excess return ({alpha['outperformance_multiple_vti']}x outperformance multiple).",
-            f"   • vs QQQ (Nasdaq 100):      Beat Nasdaq 100 growth by +{alpha['alpha_vs_qqq_pct']}% excess return ({alpha['outperformance_multiple_qqq']}x outperformance multiple).",
+            f"   • vs VTI (Total US Market): Beat total market by {alpha['alpha_vs_vti_pct']}% excess return ({alpha['outperformance_multiple_vti']}x outperformance multiple).",
+            f"   • vs QQQ (Nasdaq 100):      Beat Nasdaq 100 growth by {alpha['alpha_vs_qqq_pct']}% excess return ({alpha['outperformance_multiple_qqq']}x outperformance multiple).",
             f"   • Risk Efficiency Edge:     Strategy achieved a Sharpe Ratio of {sm['sharpe_ratio']} (vs QQQ {bm['QQQ']['sharpe_ratio']} and VTI {bm['VTI']['sharpe_ratio']}).",
             "=" * 92
         ])

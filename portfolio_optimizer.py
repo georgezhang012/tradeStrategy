@@ -9,7 +9,7 @@ Implements:
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 
 
 class PortfolioOptimizer:
@@ -84,19 +84,20 @@ class PortfolioOptimizer:
     @classmethod
     def get_asset_stats(cls, symbol: str) -> Dict[str, float]:
         """Retrieves asset expected return and volatility dynamically from screener metrics."""
-        if symbol in cls.ASSET_STATS:
-            return cls.ASSET_STATS[symbol]
         try:
             from sp500_nasdaq_screener import SP500NasdaqScreener
             metrics = SP500NasdaqScreener.generate_historical_metrics_dict().get(symbol, {})
-            cagr = metrics.get("cagr_2y", metrics.get("cagr_5y", metrics.get("cagr_10y", 16.0)))
-            if cagr is None:
-                cagr = 16.0
-            exp_ret = max(0.10, min(0.65, float(cagr) / 100.0))
-            vol = 0.30 if exp_ret > 0.35 else (0.24 if exp_ret > 0.20 else 0.19)
-            return {"expected_return": exp_ret, "volatility": vol}
+            cagr = metrics.get("cagr_2y", metrics.get("cagr_5y", metrics.get("cagr_10y")))
+            if cagr is not None:
+                exp_ret = max(0.10, min(0.95, float(cagr) / 100.0))
+                vol = 0.38 if exp_ret > 0.40 else (0.28 if exp_ret > 0.25 else 0.20)
+                return {"expected_return": exp_ret, "volatility": vol}
         except Exception:
-            return {"expected_return": 0.16, "volatility": 0.24}
+            pass
+
+        if symbol in cls.ASSET_STATS:
+            return cls.ASSET_STATS[symbol]
+        return {"expected_return": 0.16, "volatility": 0.24}
 
     @classmethod
     def build_covariance_matrix(cls, symbols: List[str]) -> Tuple[np.ndarray, np.ndarray]:
@@ -116,6 +117,49 @@ class PortfolioOptimizer:
         # Covariance = diag(vols) * corr * diag(vols)
         cov_matrix = np.outer(vols, vols) * corr_matrix
         return returns, cov_matrix
+
+    @classmethod
+    def optimize_alpha_convex(
+        cls,
+        symbols: List[str],
+        power: float = 1.5,
+        max_weight_per_asset: Optional[float] = None,
+        min_weight_per_asset: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Convex Alpha / Momentum Weighting:
+        Allocates capital proportionally to (Alpha)^power, ensuring elite compounders
+        maintain heavy portfolio torque while tail assets provide broad diversification.
+        """
+        n = len(symbols)
+        if n == 0:
+            return {"weights": {}}
+        if n == 1:
+            return {"weights": {symbols[0]: 1.0}}
+
+        returns = [cls.get_asset_stats(s)["expected_return"] for s in symbols]
+        alphas = [max(0.02, r - 0.12) for r in returns] # excess over 12% baseline
+        scores = np.array([a ** power for a in alphas])
+        total_score = np.sum(scores)
+        if total_score > 0:
+            raw_weights = scores / total_score
+        else:
+            raw_weights = np.ones(n) / n
+
+        eff_max = max_weight_per_asset or min(0.20, max(0.06, 2.5 / n))
+        eff_min = min_weight_per_asset or max(0.005, min(0.03, 0.3 / n))
+
+        weights = np.clip(raw_weights, eff_min, eff_max)
+        weights /= np.sum(weights)
+
+        allocations = {symbols[i]: round(float(weights[i]), 4) for i in range(n)}
+        port_return = float(weights @ returns)
+        return {
+            "strategy": "Alpha-Convex Momentum Weighting",
+            "symbols": symbols,
+            "weights": allocations,
+            "expected_annual_return_pct": round(port_return * 100, 2)
+        }
 
     @classmethod
     def optimize_max_sharpe(

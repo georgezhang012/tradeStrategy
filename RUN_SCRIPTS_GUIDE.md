@@ -136,18 +136,21 @@ flowchart TD
 - **Purpose**: Primary CLI runner for historical strategy simulation.
 - **Key Features**:
   - **Point-in-Time Outperformer Selection**: Evaluates candidate compounders strictly as of the backtest start date.
-  - **Adaptive $4.0 \times \text{ATR}_{14}$ Trailing Stops**: Protects capital while preventing false whipsaws (bounded 10%–25%).
+  - **Alpha-Convex Momentum Weighting**: Weights assets proportionally to $(Alpha)^{1.5}$, focusing capital torque on top secular compounders while preserving diversification.
+  - **Dynamic Sector Scaling**: Scales sector caps with portfolio size (up to 25% per sector) so large baskets are not starved of high-growth sectors.
+  - **Trend-Aware Dual Confirmation Trailing Stops**: Verifies both $4.0 \times \text{ATR}_{14}$ trailing stop and 50-day moving average breakdown, eliminating false whipsaws on routine bull market consolidations.
+  - **Asymmetric Rebalancing (Let Winners Run)**: Allows winning compounders to ride multi-year trends up to 20% portfolio weight without premature rebalance trims.
   - **Quarterly Walk-Forward Rotation**: Rotates out decaying laggards every 60 trading days into newly screened leaders.
   - **Side-by-Side Benchmark Scorecard**: Compares returns, CAGR, volatility, Sharpe ratio, and max drawdown against VTI, QQQ, and SPY.
 - **CLI Arguments**:
   - `--lookback`: Window string, e.g. `1y`, `2y`, `3y`, `6m` (default: `1y`).
   - `--start-date` / `--end-date`: Explicit calendar window (`YYYY-MM-DD`).
   - `--capital`: Starting cash (default: `$100,000`).
-  - `--top-n`: Number of diversified holdings (default: `15`).
-  - `--trailing-stop`: Base trailing stop threshold (default: `0.20` = 20%).
-  - `--take-profit`: Take-profit trim threshold (default: `0.50` = 50%).
+  - `--top-n`: Number of diversified holdings (default: `15`). Institutional sweet spot: 15–30 stocks.
+  - `--stop-loss`: Base trailing stop threshold (default: `0.20` = 20%).
+  - `--take-profit`: Take-profit trim threshold (default: `0.50` = 50%, set `0.99` to let winners compound indefinitely).
   - `--rebalance-days`: Walk-forward rebalance interval (default: `60` days).
-  - `--symbols`: Explicit list of tickers (e.g. `NVDA,MSFT,AAPL`); if omitted, screener selects top compounders point-in-time.
+  - `--symbols`: Explicit list of tickers (e.g. `NVDA MSFT AAPL`); if omitted, screener selects top compounders point-in-time.
 - **Examples**:
   ```bash
   # 1-Year Backtest with 15 cross-sector holdings:
