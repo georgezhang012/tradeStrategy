@@ -9,7 +9,8 @@ benchmark average (S&P 500 / SPY and NASDAQ 100 / QQQ) across the last 2 years
 
 import os
 import sys
-from typing import Dict, List, Any, Optional
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional, Union
 
 # ==============================================================================
 # 1. BENCHMARK PROFILES (S&P 500, NASDAQ 100, TOTAL US MARKET)
@@ -291,7 +292,8 @@ class SP500NasdaqScreener:
         cls,
         index_scope: str = "both",       # 'sp500', 'nasdaq100', or 'both'
         horizon_years: int = 2,          # 2 (default), 1, 5, 10, or 20
-        min_alpha: float = 0.0           # Minimum excess CAGR above the benchmark
+        min_alpha: float = 0.0,          # Minimum excess CAGR above the benchmark
+        as_of_date: Optional[Union[datetime, str]] = None # Point-in-time date (None = latest today)
     ) -> List[Dict[str, Any]]:
         """
         Filters all stocks in the universe whose performance exceeded the corresponding benchmark average:
@@ -299,7 +301,109 @@ class SP500NasdaqScreener:
         - NASDAQ 100 stocks are compared against NASDAQ 100 average (QQQ)
         - Dual-listed stocks are compared against QQQ and SPY.
         Default horizon: last 2 years.
+
+        Point-in-Time Support:
+        If as_of_date is provided, calculates realized trailing CAGR and excess Alpha over the
+        horizon_years window strictly PRIOR to as_of_date, avoiding any lookahead selection bias.
         """
+        as_of_dt = None
+        if as_of_date is not None:
+            if isinstance(as_of_date, str):
+                try:
+                    as_of_dt = datetime.strptime(as_of_date[:10], "%Y-%m-%d")
+                except ValueError:
+                    as_of_dt = None
+            elif isinstance(as_of_date, datetime):
+                as_of_dt = as_of_date
+
+        # POINT-IN-TIME HISTORICAL CALCULATION
+        if as_of_dt is not None and as_of_dt < datetime(2026, 10, 1):
+            from historical_data_feed import HistoricalDataFeed
+
+            lookback_start_dt = as_of_dt - timedelta(days=int(horizon_years * 365.25))
+
+            # Benchmark performance over [lookback_start_dt, as_of_dt]
+            spy_p0 = HistoricalDataFeed.get_target_price_at_date("SPY", lookback_start_dt)
+            spy_p1 = HistoricalDataFeed.get_target_price_at_date("SPY", as_of_dt)
+            spy_ret = round(((spy_p1 / spy_p0) - 1.0) * 100.0, 2)
+            spy_bm = round((((spy_p1 / spy_p0) ** (1.0 / horizon_years)) - 1.0) * 100.0, 2)
+
+            qqq_p0 = HistoricalDataFeed.get_target_price_at_date("QQQ", lookback_start_dt)
+            qqq_p1 = HistoricalDataFeed.get_target_price_at_date("QQQ", as_of_dt)
+            qqq_ret = round(((qqq_p1 / qqq_p0) - 1.0) * 100.0, 2)
+            qqq_bm = round((((qqq_p1 / qqq_p0) ** (1.0 / horizon_years)) - 1.0) * 100.0, 2)
+
+            outperformers = []
+
+            for stock in COMPREHENSIVE_UNIVERSE:
+                in_sp = stock.get("in_sp500", False)
+                in_nd = stock.get("in_nasdaq100", False)
+
+                # Apply scope filter
+                if index_scope == "sp500" and not in_sp:
+                    continue
+                if index_scope == "nasdaq100" and not in_nd:
+                    continue
+
+                sym = stock["symbol"]
+                s_p0 = HistoricalDataFeed.get_target_price_at_date(sym, lookback_start_dt)
+                s_p1 = HistoricalDataFeed.get_target_price_at_date(sym, as_of_dt)
+                s_ret = round(((s_p1 / s_p0) - 1.0) * 100.0, 2)
+                s_cagr = round((((s_p1 / s_p0) ** (1.0 / horizon_years)) - 1.0) * 100.0, 2)
+
+                if in_nd and in_sp:
+                    primary_benchmark = "Both (QQQ & SPY)"
+                    bench_val = qqq_bm
+                    alpha_sp = round(s_cagr - spy_bm, 2)
+                    alpha_qqq = round(s_cagr - qqq_bm, 2)
+                    beats = (s_cagr >= (bench_val + min_alpha)) or (s_cagr >= (spy_bm + min_alpha))
+                elif in_nd:
+                    primary_benchmark = "NASDAQ 100 (QQQ)"
+                    bench_val = qqq_bm
+                    alpha_sp = round(s_cagr - spy_bm, 2)
+                    alpha_qqq = round(s_cagr - qqq_bm, 2)
+                    beats = s_cagr >= (bench_val + min_alpha)
+                else:
+                    primary_benchmark = "S&P 500 (SPY)"
+                    bench_val = spy_bm
+                    alpha_sp = round(s_cagr - spy_bm, 2)
+                    alpha_qqq = round(s_cagr - qqq_bm, 2)
+                    beats = s_cagr >= (bench_val + min_alpha)
+
+                if beats:
+                    index_label = "Both" if (in_sp and in_nd) else ("S&P 500" if in_sp else "NASDAQ 100")
+                    beat_label = []
+                    if s_cagr > spy_bm: beat_label.append("S&P 500")
+                    if s_cagr > qqq_bm: beat_label.append("NASDAQ 100")
+
+                    outperformers.append({
+                        "symbol": stock["symbol"],
+                        "name": stock["name"],
+                        "sector": stock["sector"],
+                        "index": index_label,
+                        "beat_benchmark": " & ".join(beat_label) if beat_label else "Corresponding Index",
+                        "cagr": s_cagr,
+                        "cagr_2y": s_cagr if horizon_years == 2 else stock.get("cagr_2y"),
+                        "return_2y": s_ret if horizon_years == 2 else stock.get("return_2y"),
+                        "cagr_10y": stock.get("cagr_10y"),
+                        "return_10y": stock.get("return_10y"),
+                        "cagr_20y": stock.get("cagr_20y"),
+                        "return_20y": stock.get("return_20y"),
+                        "cagr_5y": stock.get("cagr_5y"),
+                        "return_1y": s_ret if horizon_years == 1 else stock.get("return_1y"),
+                        "benchmark_target": primary_benchmark,
+                        "benchmark_average": bench_val,
+                        "alpha_over_sp500": alpha_sp,
+                        "alpha_over_qqq": alpha_qqq,
+                        "outperformance_multiple": round(s_cagr / spy_bm, 1) if spy_bm > 0 else 1.0,
+                        "as_of_date": as_of_dt.strftime("%Y-%m-%d"),
+                        "lookback_start_date": lookback_start_dt.strftime("%Y-%m-%d")
+                    })
+
+            outperformers.sort(key=lambda x: x["alpha_over_sp500"], reverse=True)
+            return outperformers
+
+        # LATEST / BASELINE CALCULATION (as of October 2026)
         spy_bench = BENCHMARK_METRICS["SPY"]
         qqq_bench = BENCHMARK_METRICS["QQQ"]
 
@@ -387,7 +491,8 @@ class SP500NasdaqScreener:
                     "benchmark_average": bench_val,
                     "alpha_over_sp500": alpha_sp,
                     "alpha_over_qqq": alpha_qqq,
-                    "outperformance_multiple": round(stock_val / spy_bm, 1) if spy_bm > 0 else 1.0
+                    "outperformance_multiple": round(stock_val / spy_bm, 1) if spy_bm > 0 else 1.0,
+                    "as_of_date": "2026-10-12"
                 })
 
         # Rank by Alpha over S&P 500 descending
@@ -395,12 +500,12 @@ class SP500NasdaqScreener:
         return outperformers
 
     @classmethod
-    def generate_enhanced_watchlist(cls, horizon_years: int = 2) -> List[Dict[str, Any]]:
+    def generate_enhanced_watchlist(cls, horizon_years: int = 2, as_of_date: Optional[Union[datetime, str]] = None) -> List[Dict[str, Any]]:
         """
         Generates the comprehensive list of market-beating stocks
-        ready to replace WATCHLIST in AlphaStockScreener based on last 2 years (or configured horizon).
+        ready to replace WATCHLIST in AlphaStockScreener based on last 2 years (or configured horizon and as_of_date).
         """
-        beaters = cls.screen_outperformers(index_scope="both", horizon_years=horizon_years, min_alpha=0.0)
+        beaters = cls.screen_outperformers(index_scope="both", horizon_years=horizon_years, min_alpha=0.0, as_of_date=as_of_date)
         watchlist = []
         for b in beaters:
             watchlist.append({

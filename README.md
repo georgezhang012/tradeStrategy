@@ -7,6 +7,8 @@ A high-performance algorithmic and multi-agent equity trading system equipped wi
 4. **ATR-Based Adaptive Trailing Stops**: Volatility-adaptive risk management using $4.0 \times \text{ATR}_{14}$ (bounded between 10% and 25%), protecting gains tightly on low-volatility compounders while preventing whipsaws on high-beta growth leaders.
 5. **Multi-Agent Investment Committee**: 4-agent consensus pipeline (Macroeconomic Analyst, Alpha Screener, News Sentiment Specialist, and Chief Investment Strategist) deploying 100% of capital across an institutional 15-stock allocation matrix.
 
+> 📖 **Operational Manual**: For an exhaustive reference on running every script with arguments and copy-paste examples, see [`RUN_SCRIPTS_GUIDE.md`](RUN_SCRIPTS_GUIDE.md).
+
 ---
 
 ## 🚀 Key Features & Enhancements
@@ -159,6 +161,25 @@ Outperformance Multiple    ---              4.13x                 3.73x         
 | [`backtest_strategy.py`](backtest_strategy.py) | CLI runner for strategy backtesting with flexible lookback/date parameters. |
 | [`basic_multi_agent_system.py`](basic_multi_agent_system.py) | 4-Agent financial intelligence system with the updated market-beating `WATCHLIST`. |
 | [`run_basic_four_agent.py`](run_basic_four_agent.py) | Unified runner supporting standalone analysis, backtesting, and AutoGen LLM mode. |
+| [`etrade_trader.py`](etrade_trader.py) | Automated E*TRADE brokerage execution with OAuth 1.0a, whole-share integer lot optimization, and `--dry-run` simulation for $10k accounts. |
 | [`portfolio_optimizer.py`](portfolio_optimizer.py) | Markowitz Max Sharpe & Risk Parity allocation solver. |
 | [`paper_trading_simulator.py`](paper_trading_simulator.py) | Virtual broker simulator for forward execution and position tracking. |
 | [`monitor_and_alert.py`](monitor_and_alert.py) | Automated daily stop-loss auditor and portfolio drift alert system. |
+
+---
+
+## ⚡ Automated E*TRADE Broker Execution
+
+To execute the institutional multi-agent allocation on your E*TRADE account ($10,000 balance):
+
+```bash
+# 1. Preview simulated order tickets with whole-share integer rounding (Dry-Run mode)
+python3 etrade_trader.py --balance 10000 --dry-run
+
+# 2. Authenticate OAuth 1.0a session with your E*TRADE developer keys
+python3 etrade_trader.py --auth
+
+# 3. Submit live / sandbox orders
+python3 etrade_trader.py --balance 10000 --live
+```
+

@@ -66,8 +66,13 @@ class BacktestEngine:
         end_str = end_dt.strftime("%Y-%m-%d")
 
         # 1. Determine Universe with Institutional Cross-Sector Diversification
+        # Point-in-Time: Screen outperformers as of the historical start date (zero look-ahead bias)
         if not symbols:
-            screened_beaters = SP500NasdaqScreener.screen_outperformers(horizon_years=2, min_alpha=0.0)
+            screened_beaters = SP500NasdaqScreener.screen_outperformers(
+                horizon_years=2,
+                min_alpha=0.0,
+                as_of_date=start_dt
+            )
             selected_assets = []
             sector_counts: Dict[str, int] = {}
             # Enforce max 3 stocks per sector for institutional risk diversification
@@ -360,7 +365,7 @@ class BacktestEngine:
                 # Search candidate pool: first unheld selected assets, then top screened universe
                 candidate_pool = [s for s in selected_assets if s not in positions]
                 if not candidate_pool:
-                    broader = [b["symbol"] for b in SP500NasdaqScreener.screen_outperformers()[:15]]
+                    broader = [b["symbol"] for b in SP500NasdaqScreener.screen_outperformers(as_of_date=dt_str)[:15]]
                     candidate_pool = [s for s in broader if s not in positions]
 
                 for cand in candidate_pool:
@@ -423,7 +428,11 @@ class BacktestEngine:
                 port_val = cash + sum(positions[s]["shares"] * get_price(s, dt_str)["close"] for s in positions)
                 needed = top_n - len(positions)
                 if needed > 0 and cash >= (port_val * 0.04):
-                    broader_beaters = SP500NasdaqScreener.screen_outperformers(horizon_years=2, min_alpha=0.0)
+                    broader_beaters = SP500NasdaqScreener.screen_outperformers(
+                        horizon_years=2,
+                        min_alpha=0.0,
+                        as_of_date=dt_str
+                    )
                     for cand in broader_beaters:
                         cand_sym = cand["symbol"]
                         if cand_sym in positions or cand_sym in selected_assets:
